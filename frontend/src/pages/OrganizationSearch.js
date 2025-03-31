@@ -128,30 +128,41 @@ const OrganizationSearch = () => {
               HTTP Information
             </Typography>
             
-            <Grid container spacing={2}>
-              {results.httpx_results.map((result, index) => (
-                <Grid item xs={12} sm={6} md={4} key={index}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="subtitle1" gutterBottom>
-                        {result.url || result.host}
-                      </Typography>
-                      <Box sx={{ mt: 1 }}>
-                        <Chip 
-                          label={`Status: ${result.status_code || 'N/A'}`} 
-                          color={result.status_code >= 200 && result.status_code < 400 ? 'success' : 'error'} 
-                          size="small" 
-                          sx={{ mr: 1, mb: 1 }} 
-                        />
-                        {result.technologies && result.technologies.map((tech, techIndex) => (
-                          <Chip key={techIndex} label={tech} size="small" sx={{ mr: 1, mb: 1 }} />
-                        ))}
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
+            {results.httpx_results && results.httpx_results.length > 0 ? (
+              <Grid container spacing={2}>
+                {results.httpx_results.map((result, index) => (
+                  <Grid item xs={12} sm={6} md={4} key={index}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle1" gutterBottom>
+                          {result.url || result.host || 'Unknown host'}
+                        </Typography>
+                        <Box sx={{ mt: 1 }}>
+                          <Chip 
+                            label={`Status: ${result.status_code || 'N/A'}`} 
+                            color={result.status_code >= 200 && result.status_code < 400 ? 'success' : 'error'} 
+                            size="small" 
+                            sx={{ mr: 1, mb: 1 }} 
+                          />
+                          {result.technologies && result.technologies.length > 0 ? (
+                            result.technologies.map((tech, techIndex) => (
+                              <Chip key={techIndex} label={tech} size="small" sx={{ mr: 1, mb: 1 }} />
+                            ))
+                          ) : (
+                            <Chip label="No tech detected" size="small" sx={{ mr: 1, mb: 1 }} />
+                          )}
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            ) : (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                No HTTP information available. This could be because httpx didn't return any results
+                or the domains are not accessible.
+              </Alert>
+            )}
           </Paper>
         </Box>
       )}

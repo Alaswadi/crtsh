@@ -23,6 +23,10 @@ ENV PATH=$PATH:/usr/local/go/bin:/root/go/bin
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 
+# Verify the tools are installed correctly
+RUN subfinder -version && \
+    httpx -version
+
 WORKDIR /app
 
 COPY requirements.txt .
@@ -30,4 +34,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"] 
+# Create output directory
+RUN mkdir -p output
+
+# Make the entrypoint script executable
+RUN chmod +x entrypoint.sh
+
+# Use the entrypoint script
+ENTRYPOINT ["./entrypoint.sh"] 

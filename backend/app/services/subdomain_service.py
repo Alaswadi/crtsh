@@ -206,6 +206,7 @@ class SubdomainService:
     def _run_httpx(domains):
         """Run httpx on a list of domains to get additional information"""
         if not domains:
+            print("No domains provided to httpx")
             return []
         
         # Create a temporary file with the domains
@@ -215,6 +216,8 @@ class SubdomainService:
             temp_file_path = temp_file.name
         
         try:
+            print(f"Running httpx on {len(domains)} domains")
+            
             # Run httpx command
             cmd = [
                 "httpx", 
@@ -225,14 +228,45 @@ class SubdomainService:
                 "-json"
             ]
             
+            print(f"Executing command: {' '.join(cmd)}")
+            
             process = subprocess.run(
                 cmd, 
-                check=True, 
+                check=False,  # Don't raise exception on non-zero exit
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
                 universal_newlines=True
             )
             
+            # Print stderr for debugging
+            if process.stderr:
+                print(f"HTTPX stderr: {process.stderr}")
+            
+            if process.returncode != 0:
+                print(f"HTTPX exited with error code: {process.returncode}")
+                # Try with simplified options
+                cmd = [
+                    "httpx", 
+                    "-l", temp_file_path,
+                    "-silent",
+                    "-json"
+                ]
+                print(f"Retrying with simplified command: {' '.join(cmd)}")
+                process = subprocess.run(
+                    cmd, 
+                    check=False,
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+                if process.stderr:
+                    print(f"HTTPX retry stderr: {process.stderr}")
+            
+            # Check if we have any output
+            if not process.stdout:
+                print("HTTPX did not produce any output")
+                return []
+                
             # Parse the JSON output
             results = []
             for line in process.stdout.splitlines():
@@ -240,12 +274,15 @@ class SubdomainService:
                     try:
                         result = json.loads(line)
                         results.append(result)
-                    except json.JSONDecodeError:
-                        pass
+                    except json.JSONDecodeError as e:
+                        print(f"JSON decode error: {e}, Line: {line}")
             
+            print(f"HTTPX found {len(results)} results")
             return results
         except Exception as e:
+            import traceback
             print(f"Error running httpx: {e}")
+            print(traceback.format_exc())
             return []
         finally:
             # Clean up the temporary file
