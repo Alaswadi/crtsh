@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     iputils-ping \
     dnsutils \
+    dos2unix \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,8 +38,10 @@ COPY . .
 # Create output directory
 RUN mkdir -p output
 
-# Make the entrypoint script executable
-RUN chmod +x entrypoint.sh
+# Fix line endings and make the entrypoint script executable
+RUN dos2unix entrypoint.sh && \
+    chmod +x entrypoint.sh && \
+    ls -la entrypoint.sh
 
 # Use the entrypoint script
-ENTRYPOINT ["./entrypoint.sh"] 
+ENTRYPOINT ["/bin/bash", "./entrypoint.sh"] 
