@@ -40,7 +40,7 @@ const DomainSearch = () => {
     setResults(null);
     
     try {
-      const response = await axios.get(`/api/domains?domain=${domain}&use_cache=${useCache}`);
+      const response = await axios.get(`/api/domains/?domain=${domain}&use_cache=${useCache}`);
       setResults(response.data);
     } catch (err) {
       setError(err.response?.data?.detail || 'An error occurred while fetching data');
