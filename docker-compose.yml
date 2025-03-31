@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8963:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MAX_THREADS=10
+
+  php:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    ports:
+      - "8964:80"
+    volumes:
+      - ./php:/var/www/html
+    depends_on:
+      - redis
+      - backend
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8965:80"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - backend
+      - php
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis/data:/data
+    command: redis-server --appendonly yes 
