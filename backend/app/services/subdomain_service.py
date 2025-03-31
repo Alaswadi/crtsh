@@ -218,9 +218,9 @@ class SubdomainService:
         try:
             print(f"Running httpx on {len(domains)} domains")
             
-            # Run httpx command
+            # Use the explicitly linked pd-httpx command
             cmd = [
-                "httpx", 
+                "pd-httpx", 
                 "-l", temp_file_path,
                 "-silent",
                 "-tech-detect",
@@ -244,14 +244,14 @@ class SubdomainService:
             
             if process.returncode != 0:
                 print(f"HTTPX exited with error code: {process.returncode}")
-                # Try with simplified options
+                # Try with full path to httpx
                 cmd = [
-                    "httpx", 
+                    "/root/go/bin/httpx", 
                     "-l", temp_file_path,
                     "-silent",
                     "-json"
                 ]
-                print(f"Retrying with simplified command: {' '.join(cmd)}")
+                print(f"Retrying with absolute path: {' '.join(cmd)}")
                 process = subprocess.run(
                     cmd, 
                     check=False,

@@ -18,15 +18,21 @@ RUN wget https://golang.org/dl/go1.21.6.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz && \
     rm go1.21.6.linux-amd64.tar.gz
 
+# Set up Go environment
 ENV PATH=$PATH:/usr/local/go/bin:/root/go/bin
+ENV GOROOT=/usr/local/go
+ENV GOPATH=/root/go
 
 # Install subfinder and httpx
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 
 # Verify the tools are installed correctly
-RUN subfinder -version && \
-    httpx -version
+RUN echo "Go path: $PATH" && \
+    subfinder -version && \
+    /root/go/bin/httpx -version && \
+    echo "Which httpx: $(which httpx)" && \
+    ln -sf /root/go/bin/httpx /usr/local/bin/pd-httpx
 
 WORKDIR /app
 

@@ -18,30 +18,52 @@ def test_httpx():
         temp_file_path = temp_file.name
     
     try:
-        # First, check if httpx is in PATH
+        # First, check both httpx locations
         try:
-            version_result = subprocess.run(
-                ["httpx", "-version"],
-                check=True,
+            print("Checking pd-httpx symlink:")
+            pd_version_result = subprocess.run(
+                ["pd-httpx", "-version"],
+                check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True
             )
-            print(f"httpx version: {version_result.stdout}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error checking httpx version: {e}")
-            print(f"Stderr: {e.stderr}")
-            return False
+            print(f"pd-httpx version stdout: {pd_version_result.stdout}")
+            print(f"pd-httpx version stderr: {pd_version_result.stderr}")
+            
+            print("\nChecking Go httpx at absolute path:")
+            go_version_result = subprocess.run(
+                ["/root/go/bin/httpx", "-version"],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            print(f"Go httpx version stdout: {go_version_result.stdout}")
+            print(f"Go httpx version stderr: {go_version_result.stderr}")
+            
+            print("\nChecking httpx in PATH:")
+            which_result = subprocess.run(
+                ["which", "httpx"],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            print(f"Which httpx: {which_result.stdout}")
+            
+        except Exception as e:
+            print(f"Error checking httpx versions: {e}")
         
-        # Now test with actual scanning
+        # Now test with pd-httpx
         cmd = [
-            "httpx",
+            "pd-httpx",
             "-l", temp_file_path,
             "-silent",
             "-json"
         ]
         
-        print(f"Running command: {' '.join(cmd)}")
+        print(f"\nRunning command: {' '.join(cmd)}")
         
         process = subprocess.run(
             cmd,
@@ -52,9 +74,30 @@ def test_httpx():
         )
         
         if process.returncode != 0:
-            print(f"httpx exited with error code: {process.returncode}")
+            print(f"pd-httpx exited with error code: {process.returncode}")
             print(f"Stderr: {process.stderr}")
-            return False
+            
+            # Try with absolute path
+            cmd = [
+                "/root/go/bin/httpx",
+                "-l", temp_file_path,
+                "-silent",
+                "-json"
+            ]
+            print(f"\nRetrying with absolute path: {' '.join(cmd)}")
+            
+            process = subprocess.run(
+                cmd,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            
+            if process.returncode != 0:
+                print(f"Absolute path httpx exited with error code: {process.returncode}")
+                print(f"Stderr: {process.stderr}")
+                return False
         
         if not process.stdout:
             print("httpx did not produce any output")
