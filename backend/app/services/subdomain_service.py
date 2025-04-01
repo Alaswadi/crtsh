@@ -97,6 +97,23 @@ class SubdomainService:
             logger.info(f"Starting HTTPX scan for domain: {domain}")
             logger.info(f"Number of subdomains to scan: {len(subdomains)}")
             
+            # Check if httpx is installed
+            try:
+                check_cmd = ["/root/go/bin/httpx", "-version"]
+                process = await asyncio.create_subprocess_exec(
+                    *check_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+                if process.returncode != 0:
+                    logger.error(f"HTTPX is not properly installed. Version check failed: {stderr.decode()}")
+                    raise Exception("HTTPX is not properly installed")
+                logger.info(f"HTTPX version: {stdout.decode().strip()}")
+            except Exception as e:
+                logger.error(f"Failed to check HTTPX installation: {str(e)}")
+                raise Exception("HTTPX is not properly installed or accessible")
+            
             # Make a safe copy of the list
             subdomains_copy = list(subdomains)
             logger.info(f"Created safe copy of subdomains list with {len(subdomains_copy)} entries")
@@ -125,7 +142,7 @@ class SubdomainService:
                     # Run httpx with the temporary file
                     logger.info(f"Running httpx command for batch {batch_num}")
                     cmd = [
-                        "httpx",
+                        "/root/go/bin/httpx",
                         "-l", temp_file,
                         "-silent",
                         "-json",
@@ -136,7 +153,8 @@ class SubdomainService:
                         "-timeout", "10",
                         "-retries", "2",
                         "-threads", "50",
-                        "-rate-limit", "100"
+                        "-rate-limit", "100",
+                        "-verbose"  # Add verbose flag for more detailed output
                     ]
                     
                     logger.info(f"HTTPX command: {' '.join(cmd)}")
@@ -150,9 +168,11 @@ class SubdomainService:
                     stdout, stderr = await process.communicate()
                     
                     if process.returncode != 0:
+                        error_msg = stderr.decode() if stderr else "No error message available"
                         logger.error(f"HTTPX command failed with exit code {process.returncode}")
-                        logger.error(f"HTTPX stderr: {stderr.decode()}")
-                        raise Exception(f"HTTPX command failed: {stderr.decode()}")
+                        logger.error(f"HTTPX stderr: {error_msg}")
+                        logger.error(f"HTTPX stdout: {stdout.decode() if stdout else 'No output'}")
+                        raise Exception(f"HTTPX command failed: {error_msg}")
                     
                     # Parse the JSON output
                     logger.info(f"Successfully ran HTTPX for batch {batch_num}")
