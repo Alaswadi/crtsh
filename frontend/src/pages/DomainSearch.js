@@ -3,6 +3,9 @@ import { Box, TextField, Button, Typography, Container, Switch, FormControlLabel
 import { DataGrid } from '@mui/x-data-grid';
 import axios from 'axios';
 
+// Get the API base URL from .env or use empty string if undefined
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
 function DomainSearch() {
   const [domain, setDomain] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,7 +27,7 @@ function DomainSearch() {
     if (taskStatus === 'processing') {
       intervalId = setInterval(async () => {
         try {
-          const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/domains/status?domain=${domain}`);
+          const response = await axios.get(`${API_BASE_URL}/api/domains/status?domain=${domain}`);
           
           if (response.data) {
             setProgress(response.data.progress || 0);
@@ -70,7 +73,7 @@ function DomainSearch() {
       httpxIntervalId = setInterval(async () => {
         try {
           // Check if httpx has completed
-          const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/domains/status?domain=${domain}`);
+          const response = await axios.get(`${API_BASE_URL}/api/domains/status?domain=${domain}`);
           
           if (response.data && response.data.httpx_status === 'completed') {
             clearInterval(httpxIntervalId);
@@ -92,7 +95,7 @@ function DomainSearch() {
 
   const fetchResults = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/domains?domain=${domain}&use_cache=${useCache}`);
+      const response = await axios.get(`${API_BASE_URL}/api/domains?domain=${domain}&use_cache=${useCache}`);
       
       if (response.data) {
         // Update subdomains
@@ -127,7 +130,7 @@ function DomainSearch() {
   
   const fetchHttpxResults = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/domains?domain=${domain}&use_cache=${useCache}`);
+      const response = await axios.get(`${API_BASE_URL}/api/domains?domain=${domain}&use_cache=${useCache}`);
       
       if (response.data && response.data.httpx_results) {
         setHttpxResults(response.data.httpx_results.map((result, index) => ({
@@ -162,7 +165,7 @@ function DomainSearch() {
     try {
       // Make the API request including the background_task parameter
       const response = await axios.get(
-        `${process.env.REACT_APP_API_URL}/api/domains?domain=${domain}&use_cache=${useCache}&background_task=${useBackgroundTask}&run_httpx=${runHttpx}`
+        `${API_BASE_URL}/api/domains?domain=${domain}&use_cache=${useCache}&background_task=${useBackgroundTask}&run_httpx=${runHttpx}`
       );
       
       if (response.data.status === 'processing') {
@@ -202,7 +205,7 @@ function DomainSearch() {
     setHttpxStatus('running');
     
     try {
-      await axios.get(`${process.env.REACT_APP_API_URL}/api/domains/httpx?domain=${domain}&use_cache=${useCache}`);
+      await axios.get(`${API_BASE_URL}/api/domains/httpx?domain=${domain}&use_cache=${useCache}`);
       // The status will be updated by the polling function
     } catch (error) {
       console.error('Error starting httpx scan:', error);

@@ -20,6 +20,9 @@ import {
 } from '@mui/material';
 import axios from 'axios';
 
+// Get the API base URL from .env or use empty string if undefined
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
 const OrganizationSearch = () => {
   const [orgName, setOrgName] = useState('');
   const [useCache, setUseCache] = useState(true);
@@ -40,7 +43,7 @@ const OrganizationSearch = () => {
     setResults(null);
     
     try {
-      const response = await axios.get(`/api/organizations/?org_name=${orgName}&use_cache=${useCache}`);
+      const response = await axios.get(`${API_BASE_URL}/api/organizations/?org_name=${orgName}&use_cache=${useCache}`);
       setResults(response.data);
     } catch (err) {
       setError(err.response?.data?.detail || 'An error occurred while fetching data');

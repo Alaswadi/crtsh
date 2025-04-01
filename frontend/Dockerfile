@@ -2,6 +2,9 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
+# Set API URL environment variable with a default value
+ENV REACT_APP_API_URL=
+
 # Install dependencies
 COPY package*.json ./
 RUN npm install
