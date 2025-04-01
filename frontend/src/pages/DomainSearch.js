@@ -18,7 +18,7 @@ function DomainSearch() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
   const [httpxError, setHttpxError] = useState(null);
-  const [runHttpx, setRunHttpx] = useState(true); // Default to true
+  const [runHttpx, setRunHttpx] = useState(false); // Default to false to separate subdomain discovery from httpx
   const [httpxStatus, setHttpxStatus] = useState('not_started');
 
   // Polling for background task status
@@ -261,6 +261,10 @@ function DomainSearch() {
           Domain Search
         </Typography>
         
+        <Alert severity="info" sx={{ mb: 3 }}>
+          First search for subdomains, then run HTTPX scan as a separate step to avoid timeouts.
+        </Alert>
+        
         <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
           <TextField
             margin="normal"
@@ -305,7 +309,7 @@ function DomainSearch() {
                   color="primary"
                 />
               }
-              label="Run HTTPX Automatically"
+              label="Include HTTPX (not recommended for large domains)"
             />
           </Box>
           
@@ -316,7 +320,7 @@ function DomainSearch() {
             sx={{ mt: 3, mb: 2 }}
             disabled={loading || !domain}
           >
-            {loading ? 'Searching...' : 'Search'}
+            {loading ? 'Searching...' : 'Search Subdomains'}
           </Button>
         </Box>
         
@@ -349,14 +353,21 @@ function DomainSearch() {
               </Typography>
               
               {(httpxStatus === 'not_started' || httpxStatus === 'error') && subdomains.length > 0 && (
-                <Button 
-                  variant="outlined" 
-                  onClick={runHttpxScan}
-                  disabled={httpxLoading}
-                  color={httpxStatus === 'error' ? "warning" : "primary"}
-                >
-                  {httpxStatus === 'error' ? 'Retry HTTPX Scan' : 'Run HTTPX Scan'} 
-                </Button>
+                <Box>
+                  <Button 
+                    variant="contained" 
+                    onClick={runHttpxScan}
+                    disabled={httpxLoading}
+                    color={httpxStatus === 'error' ? "warning" : "primary"}
+                    size="large"
+                    sx={{ ml: 2 }}
+                  >
+                    {httpxStatus === 'error' ? 'Retry HTTPX Scan' : 'Run HTTPX Scan Now'} 
+                  </Button>
+                  <Typography variant="caption" display="block" sx={{ mt: 1, textAlign: 'right' }}>
+                    HTTPX will probe each subdomain for HTTP services
+                  </Typography>
+                </Box>
               )}
               
               {httpxStatus === 'running' && (

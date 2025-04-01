@@ -21,7 +21,7 @@ async def search_by_domain(
     domain: str = Query(..., description="The domain to search for subdomains"),
     use_cache: Optional[bool] = Query(True, description="Whether to use cached results if available"),
     background_task: Optional[bool] = Query(False, description="Run as a background task for large domains"),
-    run_httpx: Optional[bool] = Query(True, description="Whether to run httpx scan (can cause timeouts for large domains)")
+    run_httpx: Optional[bool] = Query(False, description="Whether to run httpx scan (disabled by default)")
 ):
     """
     Search for subdomains for a given domain using subfinder and crt.sh
@@ -79,8 +79,8 @@ async def search_by_domain(
                 "progress": 0
             }
             
-            # Start background task
-            asyncio.create_task(process_domain_in_background(domain, task_key, run_httpx))
+            # Start background task - but don't automatically run httpx
+            asyncio.create_task(process_domain_in_background(domain, task_key, run_httpx=False))
             
             return {
                 "domain": domain,
@@ -89,10 +89,11 @@ async def search_by_domain(
                 "progress": 0
             }
         else:
-            # Process synchronously but without running httpx immediately
-            results = await SubdomainService.get_subdomains_by_domain(domain, use_cache, run_httpx=False)
+            # Always process synchronously without running httpx automatically
+            logger.info(f"Processing domain {domain} synchronously with run_httpx={run_httpx}")
+            results = await SubdomainService.get_subdomains_by_domain(domain, use_cache, run_httpx=run_httpx)
             
-            # If httpx is requested, run it in the background
+            # If explicit httpx scan was requested, run it in the background
             if run_httpx:
                 # Create an explicitly sanitized list of subdomains
                 sanitized_subdomains = []
