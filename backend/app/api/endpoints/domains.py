@@ -67,7 +67,12 @@ async def search_by_domain(
                 # Update status to indicate httpx is running
                 cached_data["httpx_status"] = "running"
                 await set_cache(cache_key, cached_data)
-                
+            
+            # Always include httpx results in the response if they exist
+            if "httpx_results" in cached_data:
+                logger.info(f"Returning cached data with {len(cached_data['httpx_results'])} HTTPX results")
+                return cached_data
+            
             return cached_data
     
     try:
@@ -106,6 +111,10 @@ async def search_by_domain(
                 # Start httpx in a background task with the sanitized list
                 asyncio.create_task(run_httpx_background(domain, sanitized_subdomains))
                 results["httpx_status"] = "running"
+            
+            # Always include httpx results in the response if they exist
+            if "httpx_results" in results:
+                logger.info(f"Returning results with {len(results['httpx_results'])} HTTPX results")
             
             return results
     except Exception as e:
@@ -182,8 +191,20 @@ async def run_httpx_background(domain: str, subdomains: list):
         
         # Update the cache with the completed results
         cached_data = await get_cache(cache_key)
-        if cached_data and httpx_results:
-            cached_data.update(httpx_results)
+        if cached_data:
+            if httpx_results.get("httpx_status") == "completed":
+                cached_data.update({
+                    "httpx_status": "completed",
+                    "httpx_results": httpx_results.get("httpx_results", [])
+                })
+                logger.info(f"Updated cache with {len(httpx_results.get('httpx_results', []))} HTTPX results")
+            else:
+                cached_data.update({
+                    "httpx_status": "error",
+                    "httpx_error": httpx_results.get("httpx_error", "Unknown error")
+                })
+                logger.error(f"HTTPX scan failed: {httpx_results.get('httpx_error', 'Unknown error')}")
+            
             await set_cache(cache_key, cached_data)
             
         logger.info(f"Completed HTTPX scan for {domain}")
