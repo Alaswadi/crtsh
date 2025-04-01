@@ -323,16 +323,22 @@ class SubdomainService:
             List of httpx results
         """
         if not domains:
+            logger.info("No domains provided to _run_httpx")
             return []
         
-        # Make a safe copy of the list - using list constructor to guarantee a new list
-        domains_copy = list(domains)
-        
         try:
+            # Create a completely sanitized list with explicit string conversion
+            sanitized_domains = []
+            for domain in domains:
+                if domain:  # Skip empty entries
+                    sanitized_domains.append(str(domain))
+            
+            logger.info(f"Running httpx on {len(sanitized_domains)} sanitized domains")
+            
             # Write domains to temporary file
             temp_file = "/tmp/domains.txt"
             with open(temp_file, "w") as f:
-                for domain in domains_copy:
+                for domain in sanitized_domains:
                     f.write(f"{domain}\n")
             
             # Run httpx with reasonable timeout and concurrency
@@ -364,6 +370,7 @@ class SubdomainService:
             except Exception as e:
                 logger.error(f"Error removing temp file: {str(e)}")
             
+            logger.info(f"HTTPX completed successfully with {len(httpx_results)} results")
             return httpx_results
         except Exception as e:
             logger.error(f"Error running httpx: {str(e)}")
@@ -518,103 +525,4 @@ class SubdomainService:
             for domain in sorted(combined_domains):
                 f.write(f"{domain}\n")
         
-        return sorted(list(combined_domains))
-    
-    @staticmethod
-    def _run_httpx(domains):
-        """Run httpx on a list of domains to get additional information"""
-        if not domains:
-            print("No domains provided to httpx")
-            return []
-        
-        print(f"Processing {len(domains)} domains with httpx")
-        
-        # Create a temporary file with the domains
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_file:
-            for domain in domains:
-                temp_file.write(f"{domain}\n")
-            temp_file_path = temp_file.name
-        
-        try:
-            # Use the explicitly linked pd-httpx command with timeouts
-            cmd = [
-                "pd-httpx", 
-                "-l", temp_file_path,
-                "-silent",
-                "-timeout", "5",  # 5 second timeout per request
-                "-rate-limit", "150",  # Rate limit for large scans
-                "-retries", "1",  # Only retry once to avoid long waits
-                "-tech-detect",
-                "-status-code",
-                "-json"
-            ]
-            
-            print(f"Executing command: {' '.join(cmd)}")
-            
-            # Add timeout to process to prevent hanging
-            process = subprocess.run(
-                cmd, 
-                check=False,
-                timeout=120,  # 2 minutes timeout for the entire process
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE,
-                universal_newlines=True
-            )
-            
-            # Print stderr for debugging
-            if process.stderr:
-                print(f"HTTPX stderr: {process.stderr}")
-            
-            if process.returncode != 0:
-                print(f"HTTPX exited with error code: {process.returncode}")
-                # Try with full path to httpx
-                cmd = [
-                    "/root/go/bin/httpx", 
-                    "-l", temp_file_path,
-                    "-silent",
-                    "-timeout", "5",
-                    "-rate-limit", "150",
-                    "-retries", "1",
-                    "-json"
-                ]
-                print(f"Retrying with absolute path: {' '.join(cmd)}")
-                process = subprocess.run(
-                    cmd, 
-                    check=False,
-                    timeout=120,
-                    stdout=subprocess.PIPE, 
-                    stderr=subprocess.PIPE,
-                    universal_newlines=True
-                )
-                if process.stderr:
-                    print(f"HTTPX retry stderr: {process.stderr}")
-            
-            # Check if we have any output
-            if not process.stdout:
-                print("HTTPX did not produce any output")
-                return []
-                
-            # Parse the JSON output
-            results = []
-            for line in process.stdout.splitlines():
-                if line.strip():
-                    try:
-                        result = json.loads(line)
-                        results.append(result)
-                    except json.JSONDecodeError as e:
-                        print(f"JSON decode error: {e}, Line: {line}")
-            
-            print(f"HTTPX found {len(results)} results")
-            return results
-        except subprocess.TimeoutExpired:
-            print("HTTPX process timed out")
-            return []
-        except Exception as e:
-            import traceback
-            print(f"Error running httpx: {e}")
-            print(traceback.format_exc())
-            return []
-        finally:
-            # Clean up the temporary file
-            if os.path.exists(temp_file_path):
-                os.unlink(temp_file_path) 
+        return sorted(list(combined_domains)) 

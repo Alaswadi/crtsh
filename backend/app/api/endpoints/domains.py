@@ -53,10 +53,16 @@ async def search_by_domain(
         if cached_data:
             # If we have cached data but httpx was not run and is now requested
             if run_httpx and cached_data.get("httpx_status") in ["not_started", "skipped", "error"]:
-                # Start a background task to run httpx
-                # Create a list copy of subdomains to avoid "object list can't be used in 'await' expression" error
-                subdomains_list = list(cached_data["subdomains"]) if "subdomains" in cached_data else []
-                asyncio.create_task(run_httpx_background(domain, subdomains_list))
+                # Create an explicitly sanitized list of subdomains
+                sanitized_subdomains = []
+                for subdomain in cached_data.get("subdomains", []):
+                    if subdomain:  # Skip empty entries
+                        sanitized_subdomains.append(str(subdomain))
+                
+                logger.info(f"Created sanitized list of {len(sanitized_subdomains)} subdomains from cache for {domain}")
+                
+                # Start httpx in a background task with the sanitized list
+                asyncio.create_task(run_httpx_background(domain, sanitized_subdomains))
                 
                 # Update status to indicate httpx is running
                 cached_data["httpx_status"] = "running"
@@ -88,9 +94,16 @@ async def search_by_domain(
             
             # If httpx is requested, run it in the background
             if run_httpx:
-                # Create a list copy of subdomains to avoid "object list can't be used in 'await' expression" error
-                subdomains_list = list(results["subdomains"]) if "subdomains" in results else []
-                asyncio.create_task(run_httpx_background(domain, subdomains_list))
+                # Create an explicitly sanitized list of subdomains
+                sanitized_subdomains = []
+                for subdomain in results.get("subdomains", []):
+                    if subdomain:  # Skip empty entries
+                        sanitized_subdomains.append(str(subdomain))
+                
+                logger.info(f"Created sanitized list of {len(sanitized_subdomains)} subdomains from sync result for {domain}")
+                
+                # Start httpx in a background task with the sanitized list
+                asyncio.create_task(run_httpx_background(domain, sanitized_subdomains))
                 results["httpx_status"] = "running"
             
             return results
@@ -122,9 +135,16 @@ async def process_domain_in_background(domain: str, task_key: str, run_httpx: bo
         
         # If httpx is requested, run it in another background task
         if run_httpx and result.get("subdomains"):
-            # Create a fresh copy of the subdomains list to avoid "object list can't be used in 'await' expression" error
-            subdomains_list = list(result["subdomains"])
-            asyncio.create_task(run_httpx_background(domain, subdomains_list))
+            # Create an explicitly sanitized list of subdomains
+            sanitized_subdomains = []
+            for subdomain in result.get("subdomains", []):
+                if subdomain:  # Skip empty entries
+                    sanitized_subdomains.append(str(subdomain))
+            
+            logger.info(f"Created sanitized list of {len(sanitized_subdomains)} subdomains from background task for {domain}")
+            
+            # Start httpx in another background task with the sanitized list
+            asyncio.create_task(run_httpx_background(domain, sanitized_subdomains))
             
     except Exception as e:
         logger.error(f"Error in background task for {domain}: {str(e)}")
@@ -147,11 +167,17 @@ async def run_httpx_background(domain: str, subdomains: list):
             cached_data["httpx_status"] = "running"
             await set_cache(cache_key, cached_data)
         
-        # Make a fresh copy of the subdomains list to avoid modification during async operations
-        subdomains_copy = list(subdomains)
+        # Create a completely new list with explicit conversion to strings
+        # This ensures no reference to the original list object is maintained
+        sanitized_subdomains = []
+        for subdomain in subdomains:
+            if subdomain:  # Skip empty entries
+                sanitized_subdomains.append(str(subdomain))
         
-        # Run httpx on the copy of the list
-        httpx_results = await SubdomainService.run_httpx_for_domain(domain, subdomains_copy)
+        logger.info(f"Created sanitized list of {len(sanitized_subdomains)} subdomains for {domain}")
+        
+        # Run httpx on the completely new list
+        httpx_results = await SubdomainService.run_httpx_for_domain(domain, sanitized_subdomains)
         
         # Update the cache with the completed results
         cached_data = await get_cache(cache_key)
@@ -227,11 +253,16 @@ async def run_httpx_scan(
             logger.error(f"Error getting subdomains for HTTPX scan: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error getting subdomains: {str(e)}")
     
-    # Make a fresh copy of the subdomains list to avoid the await expression error
-    subdomains_list = list(cached_data["subdomains"]) if "subdomains" in cached_data else []
+    # Create an explicitly sanitized list of subdomains
+    sanitized_subdomains = []
+    for subdomain in cached_data.get("subdomains", []):
+        if subdomain:  # Skip empty entries
+            sanitized_subdomains.append(str(subdomain))
     
-    # Start the httpx scan in the background
-    asyncio.create_task(run_httpx_background(domain, subdomains_list))
+    logger.info(f"Created sanitized list of {len(sanitized_subdomains)} subdomains for HTTPX endpoint for {domain}")
+    
+    # Start the httpx scan in the background with sanitized list
+    asyncio.create_task(run_httpx_background(domain, sanitized_subdomains))
     
     # Update status to indicate httpx is running
     cached_data["httpx_status"] = "running"
@@ -239,9 +270,9 @@ async def run_httpx_scan(
     
     return {
         "domain": domain,
-        "message": f"Started httpx scan for {domain} with {len(subdomains_list)} subdomains",
+        "message": f"Started httpx scan for {domain} with {len(sanitized_subdomains)} subdomains",
         "status": "running",
-        "total_subdomains": len(subdomains_list)
+        "total_subdomains": len(sanitized_subdomains)
     }
 
 @router.get("/clear-cache")
