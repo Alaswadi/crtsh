@@ -5,6 +5,7 @@ import tempfile
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 import httpx
+import math
 from app.core.config import settings
 from app.core.redis import get_cache, set_cache
 
@@ -45,8 +46,38 @@ class SubdomainService:
                     subfinder_output, crtsh_output, combined_output
                 )
                 
-                # Run httpx on the combined results
-                httpx_results = SubdomainService._run_httpx(subdomains)
+                # Run httpx on the combined results with batching for large domains
+                httpx_results = []
+                
+                # If we have a lot of subdomains, process them in batches
+                if len(subdomains) > 100:
+                    print(f"Large domain with {len(subdomains)} subdomains. Processing in batches...")
+                    # Process in batches of 100 domains
+                    batch_size = 100
+                    num_batches = math.ceil(len(subdomains) / batch_size)
+                    
+                    # Process batches in parallel
+                    with ThreadPoolExecutor(max_workers=min(num_batches, settings.MAX_THREADS)) as batch_executor:
+                        batch_futures = []
+                        
+                        for i in range(num_batches):
+                            start_idx = i * batch_size
+                            end_idx = min(start_idx + batch_size, len(subdomains))
+                            batch = subdomains[start_idx:end_idx]
+                            
+                            print(f"Submitting batch {i+1}/{num_batches} with {len(batch)} domains")
+                            batch_futures.append(
+                                batch_executor.submit(SubdomainService._run_httpx, batch)
+                            )
+                        
+                        # Collect results from all batches
+                        for future in batch_futures:
+                            batch_results = future.result()
+                            if batch_results:
+                                httpx_results.extend(batch_results)
+                else:
+                    # For smaller domain counts, process all at once
+                    httpx_results = SubdomainService._run_httpx(subdomains)
                 
                 # Prepare the result
                 result = {
@@ -80,8 +111,38 @@ class SubdomainService:
             # Run crt.sh for the organization
             domains = SubdomainService._run_crtsh_org(org_name, org_output)
             
-            # Run httpx on the domains
-            httpx_results = SubdomainService._run_httpx(domains)
+            # Run httpx on the domains with batching for large organizations
+            httpx_results = []
+            
+            # If we have a lot of domains, process them in batches
+            if len(domains) > 100:
+                print(f"Large organization with {len(domains)} domains. Processing in batches...")
+                # Process in batches of 100 domains
+                batch_size = 100
+                num_batches = math.ceil(len(domains) / batch_size)
+                
+                # Process batches in parallel
+                with ThreadPoolExecutor(max_workers=min(num_batches, settings.MAX_THREADS)) as batch_executor:
+                    batch_futures = []
+                    
+                    for i in range(num_batches):
+                        start_idx = i * batch_size
+                        end_idx = min(start_idx + batch_size, len(domains))
+                        batch = domains[start_idx:end_idx]
+                        
+                        print(f"Submitting batch {i+1}/{num_batches} with {len(batch)} domains")
+                        batch_futures.append(
+                            batch_executor.submit(SubdomainService._run_httpx, batch)
+                        )
+                    
+                    # Collect results from all batches
+                    for future in batch_futures:
+                        batch_results = future.result()
+                        if batch_results:
+                            httpx_results.extend(batch_results)
+            else:
+                # For smaller domain counts, process all at once
+                httpx_results = SubdomainService._run_httpx(domains)
             
             # Prepare the result
             result = {
@@ -101,7 +162,11 @@ class SubdomainService:
     def _run_subfinder(domain, output_file):
         """Run subfinder to find subdomains"""
         cmd = ["subfinder", "-d", domain, "-o", output_file, "-silent"]
-        subprocess.run(cmd, check=True)
+        try:
+            # Add timeout to prevent hanging
+            subprocess.run(cmd, check=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            print(f"Subfinder timed out for domain {domain}")
         
         # Return subdomains as a list if the file exists
         if os.path.exists(output_file):
@@ -114,7 +179,7 @@ class SubdomainService:
         """Get subdomains from crt.sh"""
         url = f"https://crt.sh/?q=%.{domain}&output=json"
         try:
-            with httpx.Client() as client:
+            with httpx.Client(timeout=30.0) as client:  # Add timeout
                 response = client.get(url)
                 if response.status_code == 200:
                     data = response.json()
@@ -148,7 +213,7 @@ class SubdomainService:
         """Get domains from crt.sh for an organization"""
         url = f"https://crt.sh/?q={org_name}&output=json"
         try:
-            with httpx.Client() as client:
+            with httpx.Client(timeout=30.0) as client:  # Add timeout
                 response = client.get(url)
                 if response.status_code == 200:
                     data = response.json()
@@ -209,6 +274,8 @@ class SubdomainService:
             print("No domains provided to httpx")
             return []
         
+        print(f"Processing {len(domains)} domains with httpx")
+        
         # Create a temporary file with the domains
         with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_file:
             for domain in domains:
@@ -216,13 +283,14 @@ class SubdomainService:
             temp_file_path = temp_file.name
         
         try:
-            print(f"Running httpx on {len(domains)} domains")
-            
-            # Use the explicitly linked pd-httpx command
+            # Use the explicitly linked pd-httpx command with timeouts
             cmd = [
                 "pd-httpx", 
                 "-l", temp_file_path,
                 "-silent",
+                "-timeout", "5",  # 5 second timeout per request
+                "-rate-limit", "150",  # Rate limit for large scans
+                "-retries", "1",  # Only retry once to avoid long waits
                 "-tech-detect",
                 "-status-code",
                 "-json"
@@ -230,9 +298,11 @@ class SubdomainService:
             
             print(f"Executing command: {' '.join(cmd)}")
             
+            # Add timeout to process to prevent hanging
             process = subprocess.run(
                 cmd, 
-                check=False,  # Don't raise exception on non-zero exit
+                check=False,
+                timeout=120,  # 2 minutes timeout for the entire process
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
                 universal_newlines=True
@@ -249,12 +319,16 @@ class SubdomainService:
                     "/root/go/bin/httpx", 
                     "-l", temp_file_path,
                     "-silent",
+                    "-timeout", "5",
+                    "-rate-limit", "150",
+                    "-retries", "1",
                     "-json"
                 ]
                 print(f"Retrying with absolute path: {' '.join(cmd)}")
                 process = subprocess.run(
                     cmd, 
                     check=False,
+                    timeout=120,
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.PIPE,
                     universal_newlines=True
@@ -279,6 +353,9 @@ class SubdomainService:
             
             print(f"HTTPX found {len(results)} results")
             return results
+        except subprocess.TimeoutExpired:
+            print("HTTPX process timed out")
+            return []
         except Exception as e:
             import traceback
             print(f"Error running httpx: {e}")

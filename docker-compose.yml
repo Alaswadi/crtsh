@@ -14,7 +14,8 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - MAX_THREADS=10
+      - MAX_THREADS=25
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --timeout-keep-alive 120
 
   php:
     build:

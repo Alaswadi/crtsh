@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Typography, 
@@ -16,16 +16,54 @@ import {
   Chip,
   Card,
   CardContent,
-  Grid
+  Grid,
+  LinearProgress
 } from '@mui/material';
 import axios from 'axios';
 
 const DomainSearch = () => {
   const [domain, setDomain] = useState('');
   const [useCache, setUseCache] = useState(true);
+  const [useBackgroundTask, setUseBackgroundTask] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [results, setResults] = useState(null);
+  const [taskStatus, setTaskStatus] = useState(null);
+  const [progress, setProgress] = useState(0);
+  
+  // Poll for background task status
+  useEffect(() => {
+    let interval = null;
+    
+    if (taskStatus && taskStatus.status === 'processing') {
+      interval = setInterval(async () => {
+        try {
+          const response = await axios.get(`/api/domains/status?domain=${taskStatus.domain}`);
+          setProgress(response.data.progress || 0);
+          
+          // If the task is completed, fetch the results
+          if (response.data.status === 'completed') {
+            clearInterval(interval);
+            const resultResponse = await axios.get(`/api/domains/?domain=${taskStatus.domain}&use_cache=true`);
+            setResults(resultResponse.data);
+            setTaskStatus(null);
+            setLoading(false);
+          } else if (response.data.status === 'error') {
+            clearInterval(interval);
+            setError(`Background task error: ${response.data.error}`);
+            setTaskStatus(null);
+            setLoading(false);
+          }
+        } catch (err) {
+          console.error("Error polling task status:", err);
+        }
+      }, 3000); // Poll every 3 seconds
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [taskStatus]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -38,13 +76,25 @@ const DomainSearch = () => {
     setLoading(true);
     setError('');
     setResults(null);
+    setTaskStatus(null);
     
     try {
-      const response = await axios.get(`/api/domains/?domain=${domain}&use_cache=${useCache}`);
-      setResults(response.data);
+      const response = await axios.get(`/api/domains/?domain=${domain}&use_cache=${useCache}&background_task=${useBackgroundTask}`);
+      
+      // Check if it's a background task
+      if (response.data.status === 'processing') {
+        setTaskStatus({
+          domain: domain,
+          status: 'processing'
+        });
+        setProgress(response.data.progress || 0);
+      } else {
+        // Regular response with immediate results
+        setResults(response.data);
+        setLoading(false);
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'An error occurred while fetching data');
-    } finally {
       setLoading(false);
     }
   };
@@ -70,15 +120,27 @@ const DomainSearch = () => {
             sx={{ mb: 2 }}
           />
           
-          <FormControlLabel
-            control={
-              <Switch 
-                checked={useCache} 
-                onChange={(e) => setUseCache(e.target.checked)} 
-              />
-            }
-            label="Use Cache (faster if you've searched this domain before)"
-          />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+            <FormControlLabel
+              control={
+                <Switch 
+                  checked={useCache} 
+                  onChange={(e) => setUseCache(e.target.checked)} 
+                />
+              }
+              label="Use Cache (faster if you've searched this domain before)"
+            />
+            
+            <FormControlLabel
+              control={
+                <Switch 
+                  checked={useBackgroundTask} 
+                  onChange={(e) => setUseBackgroundTask(e.target.checked)} 
+                />
+              }
+              label="Background Task (for large domains like hilton.com)"
+            />
+          </Box>
           
           <Button 
             type="submit" 
@@ -88,7 +150,7 @@ const DomainSearch = () => {
             sx={{ mt: 2 }}
             fullWidth
           >
-            {loading ? <CircularProgress size={24} /> : 'Search'}
+            {loading && !taskStatus ? <CircularProgress size={24} /> : 'Search'}
           </Button>
         </Box>
       </Paper>
@@ -97,6 +159,24 @@ const DomainSearch = () => {
         <Alert severity="error" sx={{ mb: 4 }}>
           {error}
         </Alert>
+      )}
+      
+      {taskStatus && taskStatus.status === 'processing' && (
+        <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            Processing domain {taskStatus.domain}
+          </Typography>
+          <Typography variant="body1" paragraph>
+            This domain is being processed in the background. This may take a few minutes for large domains.
+          </Typography>
+          
+          <Box sx={{ width: '100%', mt: 2, mb: 2 }}>
+            <LinearProgress variant="determinate" value={progress} />
+            <Typography variant="body2" align="center" sx={{ mt: 1 }}>
+              {progress}% Complete
+            </Typography>
+          </Box>
+        </Paper>
       )}
       
       {results && (

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     CACHE_EXPIRATION: int = 3600  # 1 hour
     
     # Multithreading settings
-    MAX_THREADS: int = int(os.getenv("MAX_THREADS", 10))
+    MAX_THREADS: int = int(os.getenv("MAX_THREADS", 20))
     
     class Config:
         env_file = ".env"
