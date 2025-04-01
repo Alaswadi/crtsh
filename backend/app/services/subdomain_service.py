@@ -144,7 +144,6 @@ class SubdomainService:
                     cmd = [
                         "/root/go/bin/httpx",
                         "-l", temp_file,
-                        "-silent",
                         "-json",
                         "-title",
                         "-status-code",
@@ -154,7 +153,7 @@ class SubdomainService:
                         "-retries", "2",
                         "-threads", "50",
                         "-rate-limit", "100",
-                        "-verbose"  # Add verbose flag for more detailed output
+                        "-verbose"  # Keep verbose for better logging
                     ]
                     
                     logger.info(f"HTTPX command: {' '.join(cmd)}")
