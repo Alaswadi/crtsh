@@ -153,10 +153,14 @@ class SubdomainService:
                         "-retries", "2",
                         "-threads", "50",
                         "-rate-limit", "100",
-                        "-verbose"  # Keep verbose for better logging
+                        "-verbose",  # Enable verbose mode
+                        "-debug"     # Enable debug mode for even more details
                     ]
                     
                     logger.info(f"HTTPX command: {' '.join(cmd)}")
+                    logger.info(f"Temporary file contents for batch {batch_num}:")
+                    with open(temp_file, 'r') as f:
+                        logger.info(f.read())
                     
                     process = await asyncio.create_subprocess_exec(
                         *cmd,
@@ -173,6 +177,10 @@ class SubdomainService:
                         logger.error(f"HTTPX stdout: {stdout.decode() if stdout else 'No output'}")
                         raise Exception(f"HTTPX command failed: {error_msg}")
                     
+                    # Log the raw output for debugging
+                    logger.info(f"Raw HTTPX output for batch {batch_num}:")
+                    logger.info(stdout.decode())
+                    
                     # Parse the JSON output
                     logger.info(f"Successfully ran HTTPX for batch {batch_num}")
                     for line in stdout.decode().splitlines():
@@ -180,6 +188,7 @@ class SubdomainService:
                             try:
                                 result = json.loads(line)
                                 httpx_results.append(result)
+                                logger.info(f"Parsed HTTPX result: {json.dumps(result, indent=2)}")
                             except json.JSONDecodeError as e:
                                 logger.error(f"Failed to parse JSON line: {line}")
                                 logger.error(f"JSON decode error: {str(e)}")
