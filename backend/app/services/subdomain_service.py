@@ -52,6 +52,8 @@ class SubdomainService:
         # Remove duplicates using a set and convert back to list
         all_subdomains = list(set(combined_subdomains))
         
+        logger.info(f"Found {len(all_subdomains)} unique subdomains for {domain}")
+        
         # Prepare the initial result without httpx
         result = {
             "domain": domain,
@@ -68,8 +70,9 @@ class SubdomainService:
         await set_cache(cache_key, result)
         
         # Run httpx if requested
-        if run_httpx:
+        if run_httpx and all_subdomains:
             try:
+                logger.info(f"Starting HTTPX scan for {len(all_subdomains)} subdomains")
                 # Create a new list copy to ensure it's not modified during the async operation
                 subdomains_copy = all_subdomains.copy()
                 
@@ -77,6 +80,7 @@ class SubdomainService:
                 httpx_result = await SubdomainService.run_httpx_for_domain(domain, subdomains_copy)
                 if httpx_result:
                     result.update(httpx_result)
+                    logger.info(f"HTTPX scan completed with {len(httpx_result.get('httpx_results', []))} results")
                 result["execution_time"] = round(time.time() - start_time, 2)
                 
                 # Update cache with httpx results

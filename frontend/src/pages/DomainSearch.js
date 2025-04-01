@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, TextField, Button, Typography, Container, Switch, FormControlLabel, CircularProgress, LinearProgress, Alert } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import axios from 'axios';
+import logger from '../utils/logger';
 
 // Get the API base URL from .env or use empty string if undefined
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
@@ -151,6 +152,7 @@ function DomainSearch() {
   const fetchHttpxResults = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/domains?domain=${domain}&use_cache=${useCache}`);
+      logger.info("Fetched HTTPX results:", response.data);
       
       if (response.data && response.data.httpx_results) {
         setHttpxResults(response.data.httpx_results.map((result, index) => ({
@@ -160,7 +162,7 @@ function DomainSearch() {
         setHttpxLoading(false);
       }
     } catch (error) {
-      console.error('Error fetching httpx results:', error);
+      logger.error("Error fetching HTTPX results:", error);
       setHttpxLoading(false);
       setHttpxError('Failed to fetch HTTPX results');
     }
@@ -233,12 +235,39 @@ function DomainSearch() {
     setHttpxError(null);
     
     try {
-      await axios.get(`${API_BASE_URL}/domains/httpx?domain=${domain}&use_cache=${useCache}`);
-      // The status will be updated by the polling function
+      const response = await axios.get(`${API_BASE_URL}/domains/httpx?domain=${domain}&use_cache=${useCache}`);
+      logger.info("Started HTTPX scan:", response.data);
+      
+      // Start polling for results
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusResponse = await axios.get(`${API_BASE_URL}/domains/status?domain=${domain}`);
+          logger.info("HTTPX status:", statusResponse.data);
+          
+          if (statusResponse.data.httpx_status === 'completed') {
+            clearInterval(pollInterval);
+            setHttpxStatus('completed');
+            setHttpxLoading(false);
+            fetchHttpxResults();
+          } else if (statusResponse.data.httpx_status === 'error') {
+            clearInterval(pollInterval);
+            setHttpxStatus('error');
+            setHttpxLoading(false);
+            setHttpxError(statusResponse.data.httpx_error || 'An error occurred during HTTPX scanning');
+          }
+        } catch (error) {
+          logger.error("Error polling HTTPX status:", error);
+          clearInterval(pollInterval);
+          setHttpxStatus('error');
+          setHttpxLoading(false);
+          setHttpxError('Failed to check HTTPX status');
+        }
+      }, 5000); // Poll every 5 seconds
+      
     } catch (error) {
-      console.error('Error starting httpx scan:', error);
+      logger.error("Error starting HTTPX scan:", error);
       setHttpxStatus('error');
-      setHttpxError(error.response?.data?.detail || 'An error occurred while starting httpx scan');
+      setHttpxError(error.response?.data?.detail || 'An error occurred while starting HTTPX scan');
       setHttpxLoading(false);
     }
   };
