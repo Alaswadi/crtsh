@@ -63,13 +63,21 @@ class SubdomainService:
         
         # Run httpx if requested
         if run_httpx:
-            # Update the result with httpx data
-            httpx_result = await SubdomainService.run_httpx_for_domain(domain, all_subdomains)
-            result.update(httpx_result)
-            result["execution_time"] = round(time.time() - start_time, 2)
-            
-            # Update cache with httpx results
-            await set_cache(cache_key, result)
+            try:
+                # Update the result with httpx data
+                httpx_result = await SubdomainService.run_httpx_for_domain(domain, list(all_subdomains))
+                if httpx_result:
+                    result.update(httpx_result)
+                result["execution_time"] = round(time.time() - start_time, 2)
+                
+                # Update cache with httpx results
+                await set_cache(cache_key, result)
+            except Exception as e:
+                logger.error(f"Error running httpx for domain {domain}: {str(e)}")
+                # Update the httpx status in the result and cache
+                result["httpx_status"] = "error"
+                result["httpx_error"] = str(e)
+                await set_cache(cache_key, result)
         
         return result
     
@@ -92,6 +100,9 @@ class SubdomainService:
                 "httpx_status": "completed"
             }
         
+        # Make a safe copy of the list
+        subdomains_copy = list(subdomains)
+        
         # Get cache first to update
         cache_key = f"domain:{domain}"
         cached_data = await get_cache(cache_key)
@@ -101,7 +112,7 @@ class SubdomainService:
             
             # Process in batches for large domains
             batch_size = 100
-            total_subdomains = len(subdomains)
+            total_subdomains = len(subdomains_copy)
             
             if total_subdomains > batch_size:
                 logger.info(f"Processing {total_subdomains} subdomains in batches of {batch_size}")
@@ -114,7 +125,7 @@ class SubdomainService:
                 for i in range(num_batches):
                     start_idx = i * batch_size
                     end_idx = min((i + 1) * batch_size, total_subdomains)
-                    batch = subdomains[start_idx:end_idx]
+                    batch = subdomains_copy[start_idx:end_idx]
                     
                     # Update cache with progress if available
                     if cached_data:
@@ -125,12 +136,13 @@ class SubdomainService:
                     
                     # Process batch
                     batch_results = await SubdomainService._run_httpx(batch)
-                    all_httpx_results.extend(batch_results)
+                    if batch_results:
+                        all_httpx_results.extend(batch_results)
                 
                 httpx_results = all_httpx_results
             else:
                 # Process all at once for small domains
-                httpx_results = await SubdomainService._run_httpx(subdomains)
+                httpx_results = await SubdomainService._run_httpx(subdomains_copy)
             
             result = {
                 "httpx_results": httpx_results,
@@ -146,7 +158,7 @@ class SubdomainService:
             return result
             
         except Exception as e:
-            logger.error(f"Error running httpx: {str(e)}")
+            logger.error(f"Error running httpx for domain {domain}: {str(e)}")
             
             # Update cache with error status
             if cached_data:
@@ -154,11 +166,8 @@ class SubdomainService:
                 cached_data["httpx_error"] = str(e)
                 await set_cache(cache_key, cached_data)
             
-            return {
-                "httpx_results": [],
-                "httpx_status": "error",
-                "httpx_error": str(e)
-            }
+            # Re-raise the exception to be handled by the caller
+            raise
     
     @staticmethod
     async def get_subdomains_by_organization(org_name: str, use_cache: bool = True, run_httpx: bool = True) -> Dict[str, Any]:
@@ -228,14 +237,21 @@ class SubdomainService:
         
         # Run httpx if requested
         if run_httpx and all_subdomains:
-            # Update with httpx results
-            httpx_result = await SubdomainService._run_httpx(all_subdomains)
-            result["httpx_results"] = httpx_result
-            result["httpx_status"] = "completed"
-            result["execution_time"] = round(time.time() - start_time, 2)
-            
-            # Update cache
-            await set_cache(cache_key, result)
+            try:
+                # Update with httpx results
+                httpx_result = await SubdomainService._run_httpx(list(all_subdomains))
+                if httpx_result:
+                    result["httpx_results"] = httpx_result
+                result["httpx_status"] = "completed"
+                result["execution_time"] = round(time.time() - start_time, 2)
+                
+                # Update cache
+                await set_cache(cache_key, result)
+            except Exception as e:
+                logger.error(f"Error running httpx for organization {org_name}: {str(e)}")
+                result["httpx_status"] = "error"
+                result["httpx_error"] = str(e)
+                await set_cache(cache_key, result)
         
         return result
     
@@ -293,11 +309,14 @@ class SubdomainService:
         if not domains:
             return []
         
+        # Make a safe copy of the list
+        domains_copy = list(domains)
+        
         try:
             # Write domains to temporary file
             temp_file = "/tmp/domains.txt"
             with open(temp_file, "w") as f:
-                for domain in domains:
+                for domain in domains_copy:
                     f.write(f"{domain}\n")
             
             # Run httpx with reasonable timeout and concurrency
@@ -324,7 +343,10 @@ class SubdomainService:
                         logger.error(f"Error parsing httpx JSON: {line}")
             
             # Clean up temp file
-            os.remove(temp_file)
+            try:
+                os.remove(temp_file)
+            except Exception as e:
+                logger.error(f"Error removing temp file: {str(e)}")
             
             return httpx_results
         except Exception as e:

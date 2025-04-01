@@ -17,7 +17,8 @@ function DomainSearch() {
   const [taskStatus, setTaskStatus] = useState(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
-  const [runHttpx, setRunHttpx] = useState(false);
+  const [httpxError, setHttpxError] = useState(null);
+  const [runHttpx, setRunHttpx] = useState(true); // Default to true
   const [httpxStatus, setHttpxStatus] = useState('not_started');
 
   // Polling for background task status
@@ -49,6 +50,9 @@ function DomainSearch() {
               setHttpxStatus(response.data.httpx_status);
               if (response.data.httpx_status === 'completed') {
                 fetchHttpxResults();
+              } else if (response.data.httpx_status === 'error') {
+                setHttpxError('An error occurred during HTTPX scanning. You can try running it again.');
+                setHttpxLoading(false);
               }
             }
           }
@@ -70,15 +74,24 @@ function DomainSearch() {
     let httpxIntervalId = null;
     
     if (httpxStatus === 'running') {
+      setHttpxLoading(true);
       httpxIntervalId = setInterval(async () => {
         try {
           // Check if httpx has completed
           const response = await axios.get(`${API_BASE_URL}/domains/status?domain=${domain}`);
           
-          if (response.data && response.data.httpx_status === 'completed') {
-            clearInterval(httpxIntervalId);
-            setHttpxStatus('completed');
-            fetchHttpxResults();
+          if (response.data) {
+            if (response.data.httpx_status === 'completed') {
+              clearInterval(httpxIntervalId);
+              setHttpxStatus('completed');
+              setHttpxLoading(false);
+              fetchHttpxResults();
+            } else if (response.data.httpx_status === 'error') {
+              clearInterval(httpxIntervalId);
+              setHttpxStatus('error');
+              setHttpxLoading(false);
+              setHttpxError('An error occurred during HTTPX scanning. You can try running it again.');
+            }
           }
         } catch (error) {
           console.error('Error checking httpx status:', error);
@@ -107,7 +120,7 @@ function DomainSearch() {
         }
         
         // Update httpx results if available
-        if (response.data.httpx_results) {
+        if (response.data.httpx_results && response.data.httpx_results.length > 0) {
           setHttpxResults(response.data.httpx_results.map((result, index) => ({
             id: `httpx-${index}`,
             ...result
@@ -117,6 +130,13 @@ function DomainSearch() {
         // Update httpx status
         if (response.data.httpx_status) {
           setHttpxStatus(response.data.httpx_status);
+          if (response.data.httpx_status === 'running') {
+            setHttpxLoading(true);
+          } else if (response.data.httpx_status === 'error') {
+            setHttpxError('An error occurred during HTTPX scanning. You can try running it again.');
+          } else {
+            setHttpxLoading(false);
+          }
         }
       }
       
@@ -137,12 +157,12 @@ function DomainSearch() {
           id: `httpx-${index}`,
           ...result
         })));
+        setHttpxLoading(false);
       }
-      
-      setHttpxLoading(false);
     } catch (error) {
       console.error('Error fetching httpx results:', error);
       setHttpxLoading(false);
+      setHttpxError('Failed to fetch HTTPX results');
     }
   };
 
@@ -156,11 +176,13 @@ function DomainSearch() {
     
     setLoading(true);
     setError(null);
+    setHttpxError(null);
     setSubdomains([]);
     setHttpxResults([]);
     setProgress(0);
     setTaskStatus(null);
     setHttpxStatus('not_started');
+    setHttpxLoading(false);
     
     try {
       // Make the API request including the background_task parameter
@@ -180,7 +202,7 @@ function DomainSearch() {
           })));
         }
         
-        if (response.data.httpx_results) {
+        if (response.data.httpx_results && response.data.httpx_results.length > 0) {
           setHttpxResults(response.data.httpx_results.map((result, index) => ({
             id: `httpx-${index}`,
             ...result
@@ -189,6 +211,11 @@ function DomainSearch() {
         
         if (response.data.httpx_status) {
           setHttpxStatus(response.data.httpx_status);
+          if (response.data.httpx_status === 'running') {
+            setHttpxLoading(true);
+          } else if (response.data.httpx_status === 'error') {
+            setHttpxError('An error occurred during HTTPX scanning. You can try running it again.');
+          }
         }
         
         setLoading(false);
@@ -203,6 +230,7 @@ function DomainSearch() {
   const runHttpxScan = async () => {
     setHttpxLoading(true);
     setHttpxStatus('running');
+    setHttpxError(null);
     
     try {
       await axios.get(`${API_BASE_URL}/domains/httpx?domain=${domain}&use_cache=${useCache}`);
@@ -210,7 +238,7 @@ function DomainSearch() {
     } catch (error) {
       console.error('Error starting httpx scan:', error);
       setHttpxStatus('error');
-      setError(error.response?.data?.detail || 'An error occurred while starting httpx scan');
+      setHttpxError(error.response?.data?.detail || 'An error occurred while starting httpx scan');
       setHttpxLoading(false);
     }
   };
@@ -277,7 +305,7 @@ function DomainSearch() {
                   color="primary"
                 />
               }
-              label="Run HTTPX (may cause timeouts for large domains)"
+              label="Run HTTPX Automatically"
             />
           </Box>
           
@@ -320,13 +348,14 @@ function DomainSearch() {
                 Subdomains ({subdomains.length})
               </Typography>
               
-              {httpxStatus === 'not_started' && subdomains.length > 0 && (
+              {(httpxStatus === 'not_started' || httpxStatus === 'error') && subdomains.length > 0 && (
                 <Button 
                   variant="outlined" 
                   onClick={runHttpxScan}
                   disabled={httpxLoading}
+                  color={httpxStatus === 'error' ? "warning" : "primary"}
                 >
-                  Run HTTPX Scan
+                  {httpxStatus === 'error' ? 'Retry HTTPX Scan' : 'Run HTTPX Scan'} 
                 </Button>
               )}
               
@@ -337,6 +366,12 @@ function DomainSearch() {
                 </Box>
               )}
             </Box>
+            
+            {httpxError && (
+              <Alert severity="warning" sx={{ mt: 2, mb: 2 }}>
+                {httpxError}
+              </Alert>
+            )}
             
             <Box sx={{ height: 400, width: '100%' }}>
               <DataGrid
