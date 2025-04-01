@@ -137,6 +137,9 @@ class SubdomainService:
                     temp_file = f.name
                 
                 logger.info(f"Created temporary file: {temp_file}")
+                logger.info(f"Temporary file contents for batch {batch_num}:")
+                with open(temp_file, 'r') as f:
+                    logger.info(f.read())
                 
                 try:
                     # Run httpx with the temporary file
@@ -153,15 +156,12 @@ class SubdomainService:
                         "-retries", "2",
                         "-threads", "50",
                         "-rate-limit", "100",
-                        "-verbose",  # Enable verbose mode
-                        "-debug"     # Enable debug mode for even more details
+                        "-verbose"  # Enable verbose mode
                     ]
                     
                     logger.info(f"HTTPX command: {' '.join(cmd)}")
-                    logger.info(f"Temporary file contents for batch {batch_num}:")
-                    with open(temp_file, 'r') as f:
-                        logger.info(f.read())
                     
+                    # Run the command and capture output
                     process = await asyncio.create_subprocess_exec(
                         *cmd,
                         stdout=asyncio.subprocess.PIPE,
@@ -170,16 +170,18 @@ class SubdomainService:
                     
                     stdout, stderr = await process.communicate()
                     
+                    # Log raw output for debugging
+                    logger.info(f"Raw stdout for batch {batch_num}:")
+                    logger.info(stdout.decode() if stdout else "No stdout")
+                    logger.info(f"Raw stderr for batch {batch_num}:")
+                    logger.info(stderr.decode() if stderr else "No stderr")
+                    
                     if process.returncode != 0:
                         error_msg = stderr.decode() if stderr else "No error message available"
                         logger.error(f"HTTPX command failed with exit code {process.returncode}")
                         logger.error(f"HTTPX stderr: {error_msg}")
                         logger.error(f"HTTPX stdout: {stdout.decode() if stdout else 'No output'}")
                         raise Exception(f"HTTPX command failed: {error_msg}")
-                    
-                    # Log the raw output for debugging
-                    logger.info(f"Raw HTTPX output for batch {batch_num}:")
-                    logger.info(stdout.decode())
                     
                     # Parse the JSON output
                     logger.info(f"Successfully ran HTTPX for batch {batch_num}")
@@ -209,6 +211,9 @@ class SubdomainService:
                         logger.error(f"Failed to delete temporary file {temp_file}: {str(e)}")
             
             logger.info(f"Completed HTTPX scan for {domain}. Total results: {len(httpx_results)}")
+            
+            if not httpx_results:
+                logger.warning(f"No HTTPX results were collected for {domain}")
             
             return {
                 "httpx_status": "completed",
