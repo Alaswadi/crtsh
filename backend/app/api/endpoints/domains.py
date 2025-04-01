@@ -122,7 +122,7 @@ async def process_domain_in_background(domain: str, task_key: str, run_httpx: bo
         
         # If httpx is requested, run it in another background task
         if run_httpx and result.get("subdomains"):
-            # Create a list copy of subdomains to avoid "object list can't be used in 'await' expression" error
+            # Create a fresh copy of the subdomains list to avoid "object list can't be used in 'await' expression" error
             subdomains_list = list(result["subdomains"])
             asyncio.create_task(run_httpx_background(domain, subdomains_list))
             
@@ -147,8 +147,11 @@ async def run_httpx_background(domain: str, subdomains: list):
             cached_data["httpx_status"] = "running"
             await set_cache(cache_key, cached_data)
         
-        # Run httpx on a copy of the list to avoid the "object list can't be used in 'await' expression" error
-        httpx_results = await SubdomainService.run_httpx_for_domain(domain, list(subdomains))
+        # Make a fresh copy of the subdomains list to avoid modification during async operations
+        subdomains_copy = list(subdomains)
+        
+        # Run httpx on the copy of the list
+        httpx_results = await SubdomainService.run_httpx_for_domain(domain, subdomains_copy)
         
         # Update the cache with the completed results
         cached_data = await get_cache(cache_key)
@@ -224,7 +227,7 @@ async def run_httpx_scan(
             logger.error(f"Error getting subdomains for HTTPX scan: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error getting subdomains: {str(e)}")
     
-    # Make a copy of the subdomains list to avoid the await expression error
+    # Make a fresh copy of the subdomains list to avoid the await expression error
     subdomains_list = list(cached_data["subdomains"]) if "subdomains" in cached_data else []
     
     # Start the httpx scan in the background

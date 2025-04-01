@@ -43,8 +43,13 @@ class SubdomainService:
         crtsh_subdomains = await SubdomainService._get_crtsh_subdomains(domain)
         subfinder_subdomains = await SubdomainService._get_subfinder_subdomains(domain)
         
-        # Combine subdomains and remove duplicates
-        all_subdomains = list(set(crtsh_subdomains + subfinder_subdomains))
+        # Create a new list with combined subdomains - avoid modifying the original lists
+        combined_subdomains = crtsh_subdomains.copy() if crtsh_subdomains else []
+        if subfinder_subdomains:
+            combined_subdomains.extend(subfinder_subdomains)
+        
+        # Remove duplicates using a set and convert back to list
+        all_subdomains = list(set(combined_subdomains))
         
         # Prepare the initial result without httpx
         result = {
@@ -64,8 +69,11 @@ class SubdomainService:
         # Run httpx if requested
         if run_httpx:
             try:
+                # Create a new list copy to ensure it's not modified during the async operation
+                subdomains_copy = all_subdomains.copy()
+                
                 # Update the result with httpx data
-                httpx_result = await SubdomainService.run_httpx_for_domain(domain, list(all_subdomains))
+                httpx_result = await SubdomainService.run_httpx_for_domain(domain, subdomains_copy)
                 if httpx_result:
                     result.update(httpx_result)
                 result["execution_time"] = round(time.time() - start_time, 2)
@@ -100,8 +108,8 @@ class SubdomainService:
                 "httpx_status": "completed"
             }
         
-        # Make a safe copy of the list
-        subdomains_copy = list(subdomains)
+        # Make a safe copy of the list using list() constructor to ensure a new list is created
+        subdomains_copy = list(subdomains) if subdomains else []
         
         # Get cache first to update
         cache_key = f"domain:{domain}"
@@ -125,7 +133,8 @@ class SubdomainService:
                 for i in range(num_batches):
                     start_idx = i * batch_size
                     end_idx = min((i + 1) * batch_size, total_subdomains)
-                    batch = subdomains_copy[start_idx:end_idx]
+                    # Create a new batch list to avoid modification
+                    batch = subdomains_copy[start_idx:end_idx].copy()
                     
                     # Update cache with progress if available
                     if cached_data:
@@ -142,7 +151,8 @@ class SubdomainService:
                 httpx_results = all_httpx_results
             else:
                 # Process all at once for small domains
-                httpx_results = await SubdomainService._run_httpx(subdomains_copy)
+                # Create another copy to ensure we don't modify the original
+                httpx_results = await SubdomainService._run_httpx(list(subdomains_copy))
             
             result = {
                 "httpx_results": httpx_results,
@@ -198,7 +208,7 @@ class SubdomainService:
         all_subdomains = []
         
         if crtsh_result:
-            domains = crtsh_result.get("domains", [])
+            domains = crtsh_result.get("domains", []).copy()  # Make a copy of domains list
             
             # Limit to first 10 domains to avoid overloading
             domains = domains[:10]
@@ -212,11 +222,14 @@ class SubdomainService:
                         "domain": domain,
                         "total_subdomains": domain_result.get("total_subdomains", 0)
                     })
-                    all_subdomains.extend(domain_result.get("subdomains", []))
+                    # Extend the all_subdomains list with a copy of the domain's subdomains
+                    domain_subdomains = domain_result.get("subdomains", [])
+                    if domain_subdomains:
+                        all_subdomains.extend(domain_subdomains.copy())
                 except Exception as e:
                     logger.error(f"Error getting subdomains for {domain}: {str(e)}")
         
-        # Remove duplicates
+        # Remove duplicates by creating a new list from a set
         all_subdomains = list(set(all_subdomains))
         
         # Prepare the initial result without httpx
@@ -238,8 +251,11 @@ class SubdomainService:
         # Run httpx if requested
         if run_httpx and all_subdomains:
             try:
+                # Create a new copy of the all_subdomains list for httpx
+                subdomains_copy = all_subdomains.copy()
+                
                 # Update with httpx results
-                httpx_result = await SubdomainService._run_httpx(list(all_subdomains))
+                httpx_result = await SubdomainService._run_httpx(subdomains_copy)
                 if httpx_result:
                     result["httpx_results"] = httpx_result
                 result["httpx_status"] = "completed"
@@ -309,7 +325,7 @@ class SubdomainService:
         if not domains:
             return []
         
-        # Make a safe copy of the list
+        # Make a safe copy of the list - using list constructor to guarantee a new list
         domains_copy = list(domains)
         
         try:
@@ -351,6 +367,7 @@ class SubdomainService:
             return httpx_results
         except Exception as e:
             logger.error(f"Error running httpx: {str(e)}")
+            # Ensure we return a list even on error
             return []
     
     @staticmethod
