@@ -12,6 +12,7 @@ from app.utils.command_utils import run_command_with_timeout, sanitize_domain
 import time
 import logging
 from typing import List, Dict, Any, Optional
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -91,93 +92,108 @@ class SubdomainService:
     
     @staticmethod
     async def run_httpx_for_domain(domain: str, subdomains: List[str]) -> Dict[str, Any]:
-        """
-        Run httpx for the given list of subdomains
-        
-        Args:
-            domain: The main domain
-            subdomains: List of subdomains to scan
-            
-        Returns:
-            Dictionary with httpx results
-        """
-        # Skip httpx if no subdomains
-        if not subdomains:
-            return {
-                "httpx_results": [],
-                "httpx_status": "completed"
-            }
-        
-        # Make a safe copy of the list using list() constructor to ensure a new list is created
-        subdomains_copy = list(subdomains) if subdomains else []
-        
-        # Get cache first to update
-        cache_key = f"domain:{domain}"
-        cached_data = await get_cache(cache_key)
-        
+        """Run httpx scan on subdomains of a domain"""
         try:
-            start_time = time.time()
+            logger.info(f"Starting HTTPX scan for domain: {domain}")
+            logger.info(f"Number of subdomains to scan: {len(subdomains)}")
             
-            # Process in batches for large domains
-            batch_size = 100
-            total_subdomains = len(subdomains_copy)
+            # Make a safe copy of the list
+            subdomains_copy = list(subdomains)
+            logger.info(f"Created safe copy of subdomains list with {len(subdomains_copy)} entries")
             
-            if total_subdomains > batch_size:
-                logger.info(f"Processing {total_subdomains} subdomains in batches of {batch_size}")
+            # Process in batches of 50
+            batch_size = 50
+            httpx_results = []
+            total_batches = (len(subdomains_copy) + batch_size - 1) // batch_size
+            
+            logger.info(f"Will process {total_batches} batches of {batch_size} subdomains each")
+            
+            for i in range(0, len(subdomains_copy), batch_size):
+                batch = subdomains_copy[i:i + batch_size]
+                batch_num = (i // batch_size) + 1
+                logger.info(f"Processing batch {batch_num}/{total_batches} with {len(batch)} subdomains")
                 
-                # Calculate number of batches
-                num_batches = math.ceil(total_subdomains / batch_size)
-                all_httpx_results = []
+                # Create a temporary file for the batch
+                with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+                    for subdomain in batch:
+                        f.write(f"{subdomain}\n")
+                    temp_file = f.name
                 
-                # Process each batch
-                for i in range(num_batches):
-                    start_idx = i * batch_size
-                    end_idx = min((i + 1) * batch_size, total_subdomains)
-                    # Create a new batch list to avoid modification
-                    batch = subdomains_copy[start_idx:end_idx].copy()
+                logger.info(f"Created temporary file: {temp_file}")
+                
+                try:
+                    # Run httpx with the temporary file
+                    logger.info(f"Running httpx command for batch {batch_num}")
+                    cmd = [
+                        "httpx",
+                        "-l", temp_file,
+                        "-silent",
+                        "-json",
+                        "-title",
+                        "-status-code",
+                        "-content-length",
+                        "-no-color",
+                        "-timeout", "10",
+                        "-retries", "2",
+                        "-threads", "50",
+                        "-rate-limit", "100"
+                    ]
                     
-                    # Update cache with progress if available
-                    if cached_data:
-                        progress = int((i / num_batches) * 100)
-                        cached_data["httpx_status"] = "running"
-                        cached_data["httpx_progress"] = progress
-                        await set_cache(cache_key, cached_data)
+                    logger.info(f"HTTPX command: {' '.join(cmd)}")
                     
-                    # Process batch
-                    batch_results = await SubdomainService._run_httpx(batch)
-                    if batch_results:
-                        all_httpx_results.extend(batch_results)
-                
-                httpx_results = all_httpx_results
-            else:
-                # Process all at once for small domains
-                # Create another copy to ensure we don't modify the original
-                httpx_results = await SubdomainService._run_httpx(list(subdomains_copy))
+                    process = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    
+                    stdout, stderr = await process.communicate()
+                    
+                    if process.returncode != 0:
+                        logger.error(f"HTTPX command failed with exit code {process.returncode}")
+                        logger.error(f"HTTPX stderr: {stderr.decode()}")
+                        raise Exception(f"HTTPX command failed: {stderr.decode()}")
+                    
+                    # Parse the JSON output
+                    logger.info(f"Successfully ran HTTPX for batch {batch_num}")
+                    for line in stdout.decode().splitlines():
+                        if line.strip():
+                            try:
+                                result = json.loads(line)
+                                httpx_results.append(result)
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Failed to parse JSON line: {line}")
+                                logger.error(f"JSON decode error: {str(e)}")
+                                continue
+                    
+                    logger.info(f"Processed {len(httpx_results)} results in batch {batch_num}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing batch {batch_num}: {str(e)}")
+                    logger.error(f"Batch subdomains: {batch}")
+                    raise
+                finally:
+                    # Clean up the temporary file
+                    try:
+                        os.unlink(temp_file)
+                        logger.info(f"Cleaned up temporary file: {temp_file}")
+                    except Exception as e:
+                        logger.error(f"Failed to delete temporary file {temp_file}: {str(e)}")
             
-            result = {
-                "httpx_results": httpx_results,
+            logger.info(f"Completed HTTPX scan for {domain}. Total results: {len(httpx_results)}")
+            
+            return {
                 "httpx_status": "completed",
-                "httpx_execution_time": round(time.time() - start_time, 2)
+                "httpx_results": httpx_results
             }
-            
-            # Update cache with final results
-            if cached_data:
-                cached_data.update(result)
-                await set_cache(cache_key, cached_data)
-            
-            return result
             
         except Exception as e:
-            logger.error(f"Error running httpx for domain {domain}: {str(e)}")
-            
-            # Update cache with error status
-            if cached_data:
-                cached_data["httpx_status"] = "error"
-                cached_data["httpx_error"] = str(e)
-                await set_cache(cache_key, cached_data)
-            
-            # Re-raise the exception to be handled by the caller
-            raise
+            logger.error(f"Error in run_httpx_for_domain for {domain}: {str(e)}")
+            logger.error(f"Full error details: {traceback.format_exc()}")
+            return {
+                "httpx_status": "error",
+                "httpx_error": str(e)
+            }
     
     @staticmethod
     async def get_subdomains_by_organization(org_name: str, use_cache: bool = True, run_httpx: bool = True) -> Dict[str, Any]:
